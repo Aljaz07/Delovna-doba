@@ -2,171 +2,421 @@
 <html lang="sl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Delovni Čas</title>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Delovni Čas Igrica - 24h dropdown čas</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
   <style>
-    body::before {
-      content: "";
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: radial-gradient(circle, #60a5fa 0%, #1e3a8a 100%);
-      z-index: -1;
-      animation: backgroundShift 20s infinite linear;
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f172a;
+      overflow-x: hidden;
+      color: white;
+      position: relative;
     }
-
-    @keyframes backgroundShift {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
+    #canvas-bg {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -10;
+      display: block;
+    }
+    .popup {
+      position: fixed;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%) scale(0);
+      background: #22c55e;
+      padding: 20px 30px;
+      border-radius: 12px;
+      font-weight: 700;
+      box-shadow: 0 8px 15px rgba(34, 197, 94, 0.6);
+      color: white;
+      font-size: 1.25rem;
+      user-select: none;
+      pointer-events: none;
+      z-index: 1000;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .popup.show {
+      transform: translateX(-50%) scale(1);
+      pointer-events: auto;
+      animation: pulseGlow 1.5s ease-in-out infinite alternate;
+    }
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 8px 4px #22c55e; }
+      100% { box-shadow: 0 0 18px 8px #4ade80; }
+    }
+    label {
+      user-select: none;
+    }
+    select, input[type="date"] {
+      background: white;
     }
   </style>
-  <script>
-    const prazniki = [
-      '2025-01-01', '2025-02-08', '2025-04-27', '2025-05-01', '2025-05-02',
-      '2025-06-25', '2025-08-15', '2025-10-31', '2025-11-01', '2025-12-25', '2025-12-26'
-    ];
-
-    const intervals = Array.from({ length: 96 }, (_, i) => {
-      const h = String(Math.floor(i / 4)).padStart(2, '0');
-      const m = String((i % 4) * 15).padStart(2, '0');
-      return `${h}:${m}`;
-    });
-
-    function createDropdown(name) {
-      const select = document.createElement('select');
-      select.className = 'p-1 border rounded';
-      select.name = name;
-      intervals.forEach(t => {
-        const option = document.createElement('option');
-        option.value = t;
-        option.textContent = t;
-        select.appendChild(option);
-      });
-      return select;
-    }
-
-    function calculateHours(start, end) {
-      const [sh, sm] = start.split(":" ).map(Number);
-      const [eh, em] = end.split(":" ).map(Number);
-      const startMin = sh * 60 + sm;
-      const endMin = eh * 60 + em;
-      return (endMin - startMin) / 60;
-    }
-
-    function saveData() {
-      const rows = document.querySelectorAll("#table-body tr");
-      const data = Array.from(rows).map(row => ({
-        date: row.cells[0].querySelector("input")?.value || "",
-        start: row.cells[1].querySelector("select")?.value || "",
-        end: row.cells[2].querySelector("select")?.value || ""
-      }));
-      localStorage.setItem("delovniCas", JSON.stringify(data));
-    }
-
-    function loadData() {
-      const saved = JSON.parse(localStorage.getItem("delovniCas") || "[]");
-      saved.forEach(entry => {
-        addRow(entry);
-      });
-    }
-
-    function addRow(prefill = {}) {
-      const tbody = document.getElementById("table-body");
-      const row = document.createElement("tr");
-
-      const dateTd = document.createElement("td");
-      const dateInput = document.createElement("input");
-      dateInput.type = "date";
-      dateInput.className = "p-1 border rounded w-full";
-      dateInput.value = prefill.date || "";
-      dateInput.onchange = () => { updateAll(); saveData(); };
-      dateTd.appendChild(dateInput);
-
-      const startTd = document.createElement("td");
-      const startSel = createDropdown("start");
-      startSel.value = prefill.start || "";
-      startSel.onchange = () => { updateAll(); saveData(); };
-      startTd.appendChild(startSel);
-
-      const endTd = document.createElement("td");
-      const endSel = createDropdown("end");
-      endSel.value = prefill.end || "";
-      endSel.onchange = () => { updateAll(); saveData(); };
-      endTd.appendChild(endSel);
-
-      const hoursTd = document.createElement("td");
-      const overtimeTd = document.createElement("td");
-      const daysTd = document.createElement("td");
-      const monthsTd = document.createElement("td");
-      const yearsTd = document.createElement("td");
-
-      [dateTd, startTd, endTd, hoursTd, overtimeTd, daysTd, monthsTd, yearsTd].forEach(td => {
-        td.className = "border p-1 text-center";
-        row.appendChild(td);
-      });
-
-      tbody.appendChild(row);
-      updateAll();
-    }
-
-    function updateAll() {
-      const rows = document.querySelectorAll("#table-body tr");
-      let days = 0;
-
-      rows.forEach(row => {
-        const dateInput = row.cells[0].querySelector("input");
-        const startSel = row.cells[1].querySelector("select");
-        const endSel = row.cells[2].querySelector("select");
-        const date = dateInput.value;
-        const start = startSel.value;
-        const end = endSel.value;
-
-        if (date && start && end) {
-          const hours = calculateHours(start, end);
-          const overtime = Math.max(0, hours - 8);
-          days += 1;
-
-          row.cells[3].textContent = hours.toFixed(2);
-          row.cells[4].textContent = overtime.toFixed(2);
-          row.cells[5].textContent = days;
-          row.cells[6].textContent = (days / 21.75).toFixed(2);
-          row.cells[7].textContent = (days / 260).toFixed(2);
-
-          const isWeekend = [0, 6].includes(new Date(date).getDay());
-          const isHoliday = prazniki.includes(date);
-
-          row.style.backgroundColor = isHoliday ? '#fde68a' : isWeekend ? '#fca5a5' : 'white';
-        }
-      });
-    }
-
-    window.onload = loadData;
-  </script>
 </head>
-<body class="bg-gray-100 text-gray-900">
-  <div class="container mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Sledenje delovnega časa</h1>
-    <table class="w-full text-sm table-auto border border-gray-300">
-      <thead class="bg-gray-200">
-        <tr>
-          <th class="p-2 border">Datum</th>
-          <th class="p-2 border">Začetek dela</th>
-          <th class="p-2 border">Konec dela</th>
-          <th class="p-2 border">Opravljene ure</th>
-          <th class="p-2 border">Nadure</th>
-          <th class="p-2 border">Dnevi</th>
-          <th class="p-2 border">Meseci</th>
-          <th class="p-2 border">Leta</th>
-        </tr>
-      </thead>
-      <tbody id="table-body">
-        <!-- Dinamicno napolnjeno -->
-      </tbody>
-    </table>
-    <div class="flex gap-2 mt-4">
-      <button onclick="addRow()" class="px-4 py-2 bg-blue-600 text-white rounded">Dodaj vrstico</button>
-    </div>
+<body>
+  <canvas id="canvas-bg"></canvas>
+
+  <div class="max-w-xl mx-auto p-6 space-y-6">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-extrabold tracking-wide">Delovni Čas Igrica</h1>
+        <p class="text-green-400 font-semibold">Stopnja, EXP in delovna doba</p>
+      </div>
+      <img id="avatar" src="https://api.dicebear.com/7.x/adventurer/svg?seed=Player" alt="Avatar" class="w-20 h-20 rounded-full border-4 border-green-400 cursor-pointer hover:scale-105 transition-transform" title="Klikni za random avatar" />
+    </header>
+
+    <section id="stats" class="bg-gray-800 rounded-lg p-4 space-y-2 shadow-lg">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">Level: <span id="level-display">1</span></h2>
+          <div class="text-sm">EXP: <span id="exp-display">0 / 100</span></div>
+          <div class="w-full bg-gray-700 rounded h-3 mt-1 overflow-hidden">
+            <div id="exp-bar" class="bg-green-400 h-3 rounded transition-all duration-300" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p>Skupaj ur: <span id="total-hours">0</span></p>
+        <p>Skupaj dni: <span id="total-days">0</span></p>
+        <p>Delovna doba: <span id="work-years">0</span> let, <span id="work-months">0</span> mesecev</p>
+      </div>
+    </section>
+
+    <section id="daily-mission" class="bg-gray-800 rounded-lg p-4 shadow-lg">
+      <h3 class="text-lg font-semibold mb-2">🎯 Dnevna naloga</h3>
+      <p id="mission-text">Dodaj vsaj 1 vnos danes</p>
+      <p>Napredek: <span id="mission-progress">0 / 1</span></p>
+      <p>Nagrada: <span id="mission-exp">50</span> EXP</p>
+      <button id="reset-mission" class="mt-3 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded font-semibold">Ponastavi misijo (test)</button>
+    </section>
+
+    <section id="work-entry" class="bg-gray-800 rounded-lg p-4 shadow-lg space-y-3">
+      <h3 class="text-lg font-semibold">📅 Vnos Delovnega Dne</h3>
+      <input id="date-input" type="date" class="w-full p-2 rounded text-black" />
+
+      <div class="flex space-x-2">
+        <div class="flex flex-col w-1/2">
+          <label for="start-hour" class="text-white mb-1 select-none">Začetek ura</label>
+          <select id="start-hour" class="p-2 rounded text-black"></select>
+        </div>
+        <div class="flex flex-col w-1/2">
+          <label for="start-minute" class="text-white mb-1 select-none">Začetek minuta</label>
+          <select id="start-minute" class="p-2 rounded text-black"></select>
+        </div>
+      </div>
+
+      <div class="flex space-x-2">
+        <div class="flex flex-col w-1/2">
+          <label for="end-hour" class="text-white mb-1 select-none">Konec ura</label>
+          <select id="end-hour" class="p-2 rounded text-black"></select>
+        </div>
+        <div class="flex flex-col w-1/2">
+          <label for="end-minute" class="text-white mb-1 select-none">Konec minuta</label>
+          <select id="end-minute" class="p-2 rounded text-black"></select>
+        </div>
+      </div>
+
+      <button onclick="addRealEntry()" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded font-semibold">Shrani Dan</button>
+    </section>
+
+    <section id="achievements-section" class="bg-gray-800 rounded-lg p-4 shadow-lg">
+      <h3 class="text-lg font-semibold mb-2">🏅 Dosežki</h3>
+      <ul id="achievements" class="list-disc ml-5 max-h-40 overflow-y-auto"></ul>
+    </section>
+
   </div>
+
+  <div id="popup" class="popup"></div>
+
+  <audio id="level-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-253.mp3"></audio>
+  <audio id="mission-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-fast-win-video-game-notification-269.mp3"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+
+  <script>
+    // --- Three.js 3D background ---
+    const canvas = document.getElementById('canvas-bg');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.z = 50;
+
+    const geometry = new THREE.IcosahedronGeometry(10, 1);
+    const material = new THREE.MeshPhongMaterial({
+      color: 0x22c55e,
+      flatShading: true,
+      wireframe: true,
+      opacity: 0.3,
+      transparent: true
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    const light = new THREE.DirectionalLight(0x22c55e, 1);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+
+    function animate() {
+      mesh.rotation.x += 0.002;
+      mesh.rotation.y += 0.004;
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // --- Variables & Constants ---
+    const avatar = document.getElementById('avatar');
+    const popup = document.getElementById('popup');
+    const levelDisplay = document.getElementById('level-display');
+    const expDisplay = document.getElementById('exp-display');
+    const expBar = document.getElementById('exp-bar');
+    const totalHoursDisplay = document.getElementById('total-hours');
+    const totalDaysDisplay = document.getElementById('total-days');
+    const workYearsDisplay = document.getElementById('work-years');
+    const workMonthsDisplay = document.getElementById('work-months');
+    const missionText = document.getElementById('mission-text');
+    const missionProgress = document.getElementById('mission-progress');
+    const missionExp = document.getElementById('mission-exp');
+    const resetMissionBtn = document.getElementById('reset-mission');
+    const achievementsList = document.getElementById('achievements');
+    const levelSound = document.getElementById('level-sound');
+    const missionSound = document.getElementById('mission-sound');
+
+    // EXP required per level (simple formula or fixed)
+    function expForLevel(level) {
+      return 100 + (level - 1) * 50;
+    }
+
+    // Mission data
+    let dailyMission = {
+      description: "Dodaj vsaj 1 vnos danes",
+      goal: 1,
+      rewardExp: 50,
+      progress: 0,
+      completed: false,
+      lastDate: null
+    };
+
+    // Stored data keys
+    const STORAGE_KEY = 'workGameData';
+
+    // Load saved game data or default
+    let gameData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+      level: 1,
+      exp: 0,
+      totalHours: 0,
+      totalDays: 0,
+      totalMinutes: 0,
+      achievements: [],
+      entries: []
+    };
+
+    // --- Initialize UI ---
+    function populateTimeSelectors() {
+      const startHour = document.getElementById('start-hour');
+      const endHour = document.getElementById('end-hour');
+      const startMinute = document.getElementById('start-minute');
+      const endMinute = document.getElementById('end-minute');
+
+      for(let h=0; h<24; h++) {
+        const optionStartH = document.createElement('option');
+        optionStartH.value = h;
+        optionStartH.textContent = h.toString().padStart(2, '0');
+        startHour.appendChild(optionStartH);
+
+        const optionEndH = document.createElement('option');
+        optionEndH.value = h;
+        optionEndH.textContent = h.toString().padStart(2, '0');
+        endHour.appendChild(optionEndH);
+      }
+
+      for(let m=0; m<60; m+=5) {
+        const optionStartM = document.createElement('option');
+        optionStartM.value = m;
+        optionStartM.textContent = m.toString().padStart(2, '0');
+        startMinute.appendChild(optionStartM);
+
+        const optionEndM = document.createElement('option');
+        optionEndM.value = m;
+        optionEndM.textContent = m.toString().padStart(2, '0');
+        endMinute.appendChild(optionEndM);
+      }
+
+      // Default times
+      startHour.value = 7;
+      startMinute.value = 0;
+      endHour.value = 15;
+      endMinute.value = 0;
+    }
+
+    function updateStatsUI() {
+      levelDisplay.textContent = gameData.level;
+      const currentLevelExp = expForLevel(gameData.level);
+      expDisplay.textContent = `${gameData.exp} / ${currentLevelExp}`;
+      const expPercent = Math.min((gameData.exp / currentLevelExp) * 100, 100);
+      expBar.style.width = expPercent + '%';
+
+      totalHoursDisplay.textContent = Math.floor(gameData.totalMinutes / 60);
+      totalDaysDisplay.textContent = gameData.totalDays;
+
+      // Calculate years and months from totalMinutes (~720 hours per month)
+      let totalMonths = Math.floor(gameData.totalMinutes / (60 * 720));
+      let years = Math.floor(totalMonths / 12);
+      let months = totalMonths % 12;
+      workYearsDisplay.textContent = years;
+      workMonthsDisplay.textContent = months;
+    }
+
+    function updateMissionUI() {
+      missionText.textContent = dailyMission.description;
+      missionProgress.textContent = `${dailyMission.progress} / ${dailyMission.goal}`;
+      missionExp.textContent = dailyMission.rewardExp;
+    }
+
+    function saveGame() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(gameData));
+    }
+
+    // --- EXP and Leveling ---
+    function addExp(amount) {
+      gameData.exp += amount;
+
+      let currentLevelExp = expForLevel(gameData.level);
+      while(gameData.exp >= currentLevelExp) {
+        gameData.exp -= currentLevelExp;
+        gameData.level++;
+        currentLevelExp = expForLevel(gameData.level);
+        levelSound.play();
+        showPopup(`Čestitke! Dosegel si nivo ${gameData.level}! 🎉`);
+      }
+
+      updateStatsUI();
+      saveGame();
+    }
+
+    // --- Popup notifications ---
+    let popupTimeout;
+    function showPopup(message) {
+      popup.textContent = message;
+      popup.classList.add('show');
+      clearTimeout(popupTimeout);
+      popupTimeout = setTimeout(() => {
+        popup.classList.remove('show');
+      }, 2500);
+    }
+
+    // --- Avatar randomizer ---
+    avatar.onclick = () => {
+      const seed = Math.random().toString(36).substring(2,8);
+      avatar.src = `https://api.dicebear.com/7.x/adventurer/svg?seed=${seed}`;
+      showPopup("Avatar spremenjen");
+    };
+
+    // --- Add work entry ---
+    function addRealEntry() {
+      const dateInput = document.getElementById('date-input').value;
+      const sh = parseInt(document.getElementById('start-hour').value);
+      const sm = parseInt(document.getElementById('start-minute').value);
+      const eh = parseInt(document.getElementById('end-hour').value);
+      const em = parseInt(document.getElementById('end-minute').value);
+
+      if (!dateInput) {
+        alert('Izberi datum');
+        return;
+      }
+
+      // Validate times
+      const startTotal = sh * 60 + sm;
+      const endTotal = eh * 60 + em;
+      if (endTotal <= startTotal) {
+        alert('Konec mora biti po začetku!');
+        return;
+      }
+
+      // Calculate duration in minutes
+      const duration = endTotal - startTotal;
+
+      // Add entry
+      gameData.entries.push({
+        date: dateInput,
+        startHour: sh,
+        startMinute: sm,
+        endHour: eh,
+        endMinute: em,
+        duration: duration
+      });
+
+      // Update total time and days
+      gameData.totalMinutes += duration;
+
+      // Count unique days
+      const uniqueDates = new Set(gameData.entries.map(e => e.date));
+      gameData.totalDays = uniqueDates.size;
+
+      updateStatsUI();
+
+      // Update mission progress if date matches today
+      const todayStr = new Date().toISOString().slice(0,10);
+      if (dateInput === todayStr) {
+        if (!dailyMission.completed) {
+          dailyMission.progress++;
+          if (dailyMission.progress >= dailyMission.goal) {
+            dailyMission.completed = true;
+            addExp(dailyMission.rewardExp);
+            missionSound.play();
+            showPopup(`Misija opravljena! +${dailyMission.rewardExp} EXP`);
+          }
+          updateMissionUI();
+        }
+      }
+
+      saveGame();
+      showPopup('Vnos dodan');
+      resetEntryFields();
+    }
+
+    function resetEntryFields() {
+      // Reset inputs to default
+      document.getElementById('date-input').value = new Date().toISOString().slice(0,10);
+      document.getElementById('start-hour').value = 8;
+      document.getElementById('start-minute').value = 0;
+      document.getElementById('end-hour').value = 16;
+      document.getElementById('end-minute').value = 0;
+    }
+
+    // --- Reset mission ---
+    resetMissionBtn.onclick = () => {
+      dailyMission.progress = 0;
+      dailyMission.completed = false;
+      dailyMission.lastDate = new Date().toISOString().slice(0,10);
+      updateMissionUI();
+      saveGame();
+      showPopup('Misija ponastavljena');
+    };
+
+    // --- Initialization ---
+    function init() {
+      populateTimeSelectors();
+
+      // Set default date input to today
+      document.getElementById('date-input').value = new Date().toISOString().slice(0,10);
+
+      // Restore mission progress if saved for today, else reset
+      const todayStr = new Date().toISOString().slice(0,10);
+      if (dailyMission.lastDate !== todayStr) {
+        dailyMission.progress = 0;
+        dailyMission.completed = false;
+        dailyMission.lastDate = todayStr;
+      }
+
+      updateStatsUI();
+      updateMissionUI();
+    }
+
+    init();
+  </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Delovni Čas Igrica - 24h dropdown čas</title>
+  <title>Delovni Čas Igrica - Izpis, Nadure, Dnevne Misije</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
   <style>
     body, html {
@@ -52,6 +52,28 @@
     select, input[type="date"] {
       background: white;
     }
+    /* Scroll box for entries */
+    #entries-list {
+      max-height: 220px;
+      overflow-y: auto;
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.9rem;
+      user-select: text;
+    }
+    #entries-list table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #entries-list th, #entries-list td {
+      border: 1px solid #334155;
+      padding: 4px 8px;
+      text-align: center;
+    }
+    #entries-list th {
+      background-color: #334155;
+    }
   </style>
 </head>
 <body>
@@ -81,12 +103,13 @@
         <p>Skupaj ur: <span id="total-hours">0</span></p>
         <p>Skupaj dni: <span id="total-days">0</span></p>
         <p>Delovna doba: <span id="work-years">0</span> let, <span id="work-months">0</span> mesecev</p>
+        <p>Nadure danes: <span id="overtime-today">0</span> minut</p>
       </div>
     </section>
 
     <section id="daily-mission" class="bg-gray-800 rounded-lg p-4 shadow-lg">
       <h3 class="text-lg font-semibold mb-2">🎯 Dnevna naloga</h3>
-      <p id="mission-text">Dodaj vsaj 1 vnos danes</p>
+      <p id="mission-text">Naloga</p>
       <p>Napredek: <span id="mission-progress">0 / 1</span></p>
       <p>Nagrada: <span id="mission-exp">50</span> EXP</p>
       <button id="reset-mission" class="mt-3 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded font-semibold">Ponastavi misijo (test)</button>
@@ -126,6 +149,11 @@
       <ul id="achievements" class="list-disc ml-5 max-h-40 overflow-y-auto"></ul>
     </section>
 
+    <section id="entries-section" class="bg-gray-800 rounded-lg p-4 shadow-lg">
+      <h3 class="text-lg font-semibold mb-2">📝 Izpis dnevnih vnosov</h3>
+      <div id="entries-list"></div>
+    </section>
+
   </div>
 
   <div id="popup" class="popup"></div>
@@ -140,16 +168,15 @@
     const canvas = document.getElementById('canvas-bg');
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
-    camera.position.z = 50;
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.z = 4;
 
-    const geometry = new THREE.IcosahedronGeometry(10, 1);
+    const geometry = new THREE.TorusKnotGeometry(1, 0.3, 100, 16);
     const material = new THREE.MeshPhongMaterial({
       color: 0x22c55e,
+      emissive: 0x104010,
+      shininess: 100,
       flatShading: true,
-      wireframe: true,
-      opacity: 0.3,
-      transparent: true
     });
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
@@ -184,21 +211,22 @@
     const achievementsList = document.getElementById('achievements');
     const levelSound = document.getElementById('level-sound');
     const missionSound = document.getElementById('mission-sound');
+    const entriesList = document.getElementById('entries-list');
+    const overtimeTodayDisplay = document.getElementById('overtime-today');
 
     // EXP required per level (simple formula or fixed)
     function expForLevel(level) {
       return 100 + (level - 1) * 50;
     }
 
-    // Mission data
-    let dailyMission = {
-      description: "Dodaj vsaj 1 vnos danes",
-      goal: 1,
-      rewardExp: 50,
-      progress: 0,
-      completed: false,
-      lastDate: null
-    };
+    // Mission pool - vsak dan druga misija, ki se ponavlja v ciklu
+    const missionPool = [
+      { description: "Dodaj vsaj 1 vnos danes", goal: 1, rewardExp: 50, type: "addEntries" },
+      { description: "Doseži vsaj 8 ur dela danes", goal: 8*60, rewardExp: 80, type: "workMinutes" },
+      { description: "Naredi 1 vnos z nadurami", goal: 1, rewardExp: 60, type: "overtimeEntry" },
+      { description: "Dodaj vsaj 3 vnose danes", goal: 3, rewardExp: 120, type: "addEntries" },
+      { description: "Skupaj 40 ur ta teden", goal: 40*60, rewardExp: 150, type: "weeklyMinutes" },
+    ];
 
     // Stored data keys
     const STORAGE_KEY = 'workGameData';
@@ -246,38 +274,10 @@
       }
 
       // Default times
-      startHour.value = 7;
+      startHour.value = 8;
       startMinute.value = 0;
-      endHour.value = 15;
+      endHour.value = 16;
       endMinute.value = 0;
-    }
-
-    function updateStatsUI() {
-      levelDisplay.textContent = gameData.level;
-      const currentLevelExp = expForLevel(gameData.level);
-      expDisplay.textContent = `${gameData.exp} / ${currentLevelExp}`;
-      const expPercent = Math.min((gameData.exp / currentLevelExp) * 100, 100);
-      expBar.style.width = expPercent + '%';
-
-      totalHoursDisplay.textContent = Math.floor(gameData.totalMinutes / 60);
-      totalDaysDisplay.textContent = gameData.totalDays;
-
-      // Calculate years and months from totalMinutes (~720 hours per month)
-      let totalMonths = Math.floor(gameData.totalMinutes / (60 * 720));
-      let years = Math.floor(totalMonths / 12);
-      let months = totalMonths % 12;
-      workYearsDisplay.textContent = years;
-      workMonthsDisplay.textContent = months;
-    }
-
-    function updateMissionUI() {
-      missionText.textContent = dailyMission.description;
-      missionProgress.textContent = `${dailyMission.progress} / ${dailyMission.goal}`;
-      missionExp.textContent = dailyMission.rewardExp;
-    }
-
-    function saveGame() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(gameData));
     }
 
     // --- EXP and Leveling ---
@@ -358,24 +358,13 @@
 
       updateStatsUI();
 
-      // Update mission progress if date matches today
-      const todayStr = new Date().toISOString().slice(0,10);
-      if (dateInput === todayStr) {
-        if (!dailyMission.completed) {
-          dailyMission.progress++;
-          if (dailyMission.progress >= dailyMission.goal) {
-            dailyMission.completed = true;
-            addExp(dailyMission.rewardExp);
-            missionSound.play();
-            showPopup(`Misija opravljena! +${dailyMission.rewardExp} EXP`);
-          }
-          updateMissionUI();
-        }
-      }
+      // Update mission progress for today's missions
+      checkDailyMissions(dateInput);
 
       saveGame();
       showPopup('Vnos dodan');
       resetEntryFields();
+      renderEntriesList();
     }
 
     function resetEntryFields() {
@@ -387,33 +376,226 @@
       document.getElementById('end-minute').value = 0;
     }
 
-    // --- Reset mission ---
-    resetMissionBtn.onclick = () => {
-      dailyMission.progress = 0;
-      dailyMission.completed = false;
-      dailyMission.lastDate = new Date().toISOString().slice(0,10);
+    // --- Entries list rendering ---
+    function renderEntriesList() {
+      if (gameData.entries.length === 0) {
+        entriesList.innerHTML = '<p class="text-center text-gray-400">Ni vnosov.</p>';
+        return;
+      }
+      // Razvrsti po datumu in začetku ure
+      const sortedEntries = [...gameData.entries].sort((a,b) => {
+        if (a.date === b.date) {
+          return (a.startHour*60 + a.startMinute) - (b.startHour*60 + b.startMinute);
+        }
+        return a.date.localeCompare(b.date);
+      });
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Začetek</th>
+            <th>Konec</th>
+            <th>Trajanje (min)</th>
+            <th>Nadure (min)</th>
+          </tr>
+        </thead><tbody>`;
+
+      for (const entry of sortedEntries) {
+        const duration = entry.duration;
+        // Nadure = trajanje nad 8 ur (480 min)
+        let overtime = 0;
+        if (duration > 480) {
+          overtime = duration - 480;
+        }
+        html += `<tr>
+          <td>${entry.date}</td>
+          <td>${entry.startHour.toString().padStart(2,'0')}:${entry.startMinute.toString().padStart(2,'0')}</td>
+          <td>${entry.endHour.toString().padStart(2,'0')}:${entry.endMinute.toString().padStart(2,'0')}</td>
+          <td>${duration}</td>
+          <td>${overtime}</td>
+        </tr>`;
+      }
+
+      html += '</tbody></table>';
+
+      entriesList.innerHTML = html;
+
+      // Izpiši nadure danes posebej (skupaj)
+      const today = new Date().toISOString().slice(0,10);
+      const todaysEntries = gameData.entries.filter(e => e.date === today);
+      let todaysOvertime = 0;
+      for (const e of todaysEntries) {
+        if (e.duration > 480) {
+          todaysOvertime += e.duration - 480;
+        }
+      }
+      overtimeTodayDisplay.textContent = todaysOvertime;
+    }
+
+    // --- Stats UI update ---
+    function updateStatsUI() {
+      levelDisplay.textContent = gameData.level;
+      expDisplay.textContent = `${gameData.exp} / ${expForLevel(gameData.level)}`;
+      expBar.style.width = (gameData.exp / expForLevel(gameData.level) * 100) + '%';
+      totalHoursDisplay.textContent = Math.floor(gameData.totalMinutes / 60);
+      totalDaysDisplay.textContent = gameData.totalDays;
+
+      // Calculate work years and months (assuming 2000 work hours = 1 year)
+      const workHours = gameData.totalMinutes / 60;
+      const years = Math.floor(workHours / 2000);
+      const months = Math.floor((workHours % 2000) / (2000/12));
+      workYearsDisplay.textContent = years;
+      workMonthsDisplay.textContent = months;
+
+      // Achievements
+      renderAchievements();
+    }
+
+    // --- Achievements rendering ---
+    function renderAchievements() {
+      achievementsList.innerHTML = '';
+      for (const ach of gameData.achievements) {
+        const li = document.createElement('li');
+        li.textContent = ach;
+        achievementsList.appendChild(li);
+      }
+    }
+
+    // --- Daily mission system ---
+    // Shranimo trenutno misijo v localStorage z datumom
+    function getTodayMission() {
+      const today = new Date().toISOString().slice(0,10);
+      const missionIndex = (new Date().getDate() + new Date().getMonth()) % missionPool.length;
+      return missionPool[missionIndex];
+    }
+
+    function loadMissionProgress() {
+      const today = new Date().toISOString().slice(0,10);
+      const stored = JSON.parse(localStorage.getItem('missionProgress'));
+      if (stored && stored.date === today) {
+        return stored;
+      }
+      return { date: today, progress: 0, completed: false };
+    }
+
+    let currentMission = getTodayMission();
+    let missionData = loadMissionProgress();
+
+    function updateMissionUI() {
+      missionText.textContent = currentMission.description;
+      missionProgress.textContent = `${missionData.progress} / ${currentMission.goal}`;
+      missionExp.textContent = currentMission.rewardExp;
+    }
+
+    function saveMissionProgress() {
+      localStorage.setItem('missionProgress', JSON.stringify(missionData));
+    }
+
+    // Check mission progress when adding entries
+    function checkDailyMissions(todayDate) {
+      if (missionData.completed) return;
+
+      switch(currentMission.type) {
+        case "addEntries":
+          // Štej vnose za današnji dan
+          const todayEntriesCount = gameData.entries.filter(e => e.date === todayDate).length;
+          if (todayEntriesCount >= currentMission.goal) {
+            missionData.progress = currentMission.goal;
+            completeMission();
+          } else {
+            missionData.progress = todayEntriesCount;
+          }
+          break;
+
+        case "workMinutes":
+          // Štej skupno trajanje za današnji dan
+          const todayEntries = gameData.entries.filter(e => e.date === todayDate);
+          let totalMinutes = 0;
+          for (const e of todayEntries) totalMinutes += e.duration;
+          if (totalMinutes >= currentMission.goal) {
+            missionData.progress = currentMission.goal;
+            completeMission();
+          } else {
+            missionData.progress = totalMinutes;
+          }
+          break;
+
+        case "overtimeEntry":
+          // Poišči vnose z nadurami danes
+          const overtimeEntries = gameData.entries.filter(e => e.date === todayDate && e.duration > 480);
+          if (overtimeEntries.length >= currentMission.goal) {
+            missionData.progress = currentMission.goal;
+            completeMission();
+          } else {
+            missionData.progress = overtimeEntries.length;
+          }
+          break;
+
+        case "weeklyMinutes":
+          // Sumiraj od ponedeljka do danes
+          const todayDateObj = new Date(todayDate);
+          const dayOfWeek = todayDateObj.getDay(); // 0=nedelja
+          const monday = new Date(todayDateObj);
+          monday.setDate(todayDateObj.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+
+          let weeklyMinutes = 0;
+          for (const e of gameData.entries) {
+            const eDate = new Date(e.date);
+            if (eDate >= monday && eDate <= todayDateObj) {
+              weeklyMinutes += e.duration;
+            }
+          }
+          if (weeklyMinutes >= currentMission.goal) {
+            missionData.progress = currentMission.goal;
+            completeMission();
+          } else {
+            missionData.progress = weeklyMinutes;
+          }
+          break;
+      }
+
       updateMissionUI();
-      saveGame();
+      saveMissionProgress();
+    }
+
+    function completeMission() {
+      missionData.completed = true;
+      addExp(currentMission.rewardExp);
+      missionSound.play();
+      showPopup(`Misija končana! +${currentMission.rewardExp} EXP`);
+      // Dodaj dosežek
+      const achText = `Končal misijo: "${currentMission.description}"`;
+      if (!gameData.achievements.includes(achText)) {
+        gameData.achievements.push(achText);
+        saveGame();
+        renderAchievements();
+      }
+    }
+
+    resetMissionBtn.onclick = () => {
+      missionData = { date: new Date().toISOString().slice(0,10), progress: 0, completed: false };
+      saveMissionProgress();
+      updateMissionUI();
       showPopup('Misija ponastavljena');
     };
 
-    // --- Initialization ---
+    // --- Save game ---
+    function saveGame() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(gameData));
+    }
+
+    // --- Initialize ---
     function init() {
       populateTimeSelectors();
-
-      // Set default date input to today
-      document.getElementById('date-input').value = new Date().toISOString().slice(0,10);
-
-      // Restore mission progress if saved for today, else reset
-      const todayStr = new Date().toISOString().slice(0,10);
-      if (dailyMission.lastDate !== todayStr) {
-        dailyMission.progress = 0;
-        dailyMission.completed = false;
-        dailyMission.lastDate = todayStr;
-      }
-
+      resetEntryFields();
       updateStatsUI();
+      renderEntriesList();
       updateMissionUI();
+      // Nastavi današnji datum v inputu
+      document.getElementById('date-input').value = new Date().toISOString().slice(0,10);
+      // Obnova misije in izračun napredka za danes
+      checkDailyMissions(new Date().toISOString().slice(0,10));
     }
 
     init();

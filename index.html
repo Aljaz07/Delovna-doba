@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delovni Čas</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(circle, #60a5fa 0%, #1e3a8a 100%);
+      z-index: -1;
+      animation: backgroundShift 20s infinite linear;
+    }
+
+    @keyframes backgroundShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+  </style>
+  <script>
+    const prazniki = [
+      '2025-01-01', '2025-02-08', '2025-04-27', '2025-05-01', '2025-05-02',
+      '2025-06-25', '2025-08-15', '2025-10-31', '2025-11-01', '2025-12-25', '2025-12-26'
+    ];
+
+    const intervals = Array.from({ length: 96 }, (_, i) => {
+      const h = String(Math.floor(i / 4)).padStart(2, '0');
+      const m = String((i % 4) * 15).padStart(2, '0');
+      return `${h}:${m}`;
+    });
+
+    let totalDays = 0;
+
+    function createDropdown(name) {
+      const select = document.createElement('select');
+      select.className = 'p-1 border rounded';
+      select.name = name;
+      intervals.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t;
+        option.textContent = t;
+        select.appendChild(option);
+      });
+      return select;
+    }
+
+    function calculateHours(start, end) {
+      const [sh, sm] = start.split(":").map(Number);
+      const [eh, em] = end.split(":").map(Number);
+      const startMin = sh * 60 + sm;
+      const endMin = eh * 60 + em;
+      return (endMin - startMin) / 60;
+    }
+
+    function addRow() {
+      const tbody = document.getElementById("table-body");
+      const row = document.createElement("tr");
+
+      const dateTd = document.createElement("td");
+      const dateInput = document.createElement("input");
+      dateInput.type = "date";
+      dateInput.className = "p-1 border rounded w-full";
+      dateInput.onchange = updateAll;
+      dateTd.appendChild(dateInput);
+
+      const startTd = document.createElement("td");
+      const startSel = createDropdown("start");
+      startSel.onchange = updateAll;
+      startTd.appendChild(startSel);
+
+      const endTd = document.createElement("td");
+      const endSel = createDropdown("end");
+      endSel.onchange = updateAll;
+      endTd.appendChild(endSel);
+
+      const hoursTd = document.createElement("td");
+      const overtimeTd = document.createElement("td");
+      const daysTd = document.createElement("td");
+      const monthsTd = document.createElement("td");
+      const yearsTd = document.createElement("td");
+
+      [dateTd, startTd, endTd, hoursTd, overtimeTd, daysTd, monthsTd, yearsTd].forEach(td => {
+        td.className = "border p-1 text-center";
+        row.appendChild(td);
+      });
+
+      tbody.appendChild(row);
+    }
+
+    function updateAll() {
+      const rows = document.querySelectorAll("#table-body tr");
+      let days = 0;
+
+      rows.forEach(row => {
+        const dateInput = row.cells[0].querySelector("input");
+        const startSel = row.cells[1].querySelector("select");
+        const endSel = row.cells[2].querySelector("select");
+        const date = dateInput.value;
+        const start = startSel.value;
+        const end = endSel.value;
+
+        if (date && start && end) {
+          const hours = calculateHours(start, end);
+          const overtime = Math.max(0, hours - 8);
+          days += 1;
+
+          row.cells[3].textContent = hours.toFixed(2);
+          row.cells[4].textContent = overtime.toFixed(2);
+          row.cells[5].textContent = days;
+          row.cells[6].textContent = (days / 21.75).toFixed(2);
+          row.cells[7].textContent = (days / 260).toFixed(2);
+
+          const isWeekend = [0, 6].includes(new Date(date).getDay());
+          const isHoliday = prazniki.includes(date);
+
+          row.style.backgroundColor = isHoliday ? '#fde68a' : isWeekend ? '#fca5a5' : 'white';
+        }
+      });
+    }
+
+    async function exportPDF() {
+      const {{ jsPDF }} = window.jspdf;
+      const doc = new jsPDF();
+      let y = 10;
+
+      doc.setFontSize(14);
+      doc.text("Mesečna statistika delovnega časa", 10, y);
+      y += 10;
+
+      const rows = document.querySelectorAll("#table-body tr");
+
+      rows.forEach(row => {
+        const date = row.cells[0].querySelector("input")?.value || "";
+        const start = row.cells[1].querySelector("select")?.value || "";
+        const end = row.cells[2].querySelector("select")?.value || "";
+        const hours = row.cells[3].textContent;
+        const overtime = row.cells[4].textContent;
+
+        doc.text(`${date} | ${start} - ${end} | Ure: ${hours}, Nadure: ${overtime}`, 10, y);
+        y += 8;
+
+        if (y > 270) {
+          doc.addPage();
+          y = 10;
+        }
+      });
+
+      doc.save("mesecna_statistika.pdf");
+    }
+  </script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Sledenje delovnega časa</h1>
+    <table class="w-full text-sm table-auto border border-gray-300">
+      <thead class="bg-gray-200">
+        <tr>
+          <th class="p-2 border">Datum</th>
+          <th class="p-2 border">Začetek dela</th>
+          <th class="p-2 border">Konec dela</th>
+          <th class="p-2 border">Opravljene ure</th>
+          <th class="p-2 border">Nadure</th>
+          <th class="p-2 border">Dnevi</th>
+          <th class="p-2 border">Meseci</th>
+          <th class="p-2 border">Leta</th>
+        </tr>
+      </thead>
+      <tbody id="table-body">
+        <!-- Dinamicno napolnjeno -->
+      </tbody>
+    </table>
+    <div class="flex gap-2 mt-4">
+      <button onclick="addRow()" class="px-4 py-2 bg-blue-600 text-white rounded">Dodaj vrstico</button>
+      <button onclick="exportPDF()" class="px-4 py-2 bg-green-600 text-white rounded">Izvozi PDF</button>
+    </div>
+  </div>
+</body>
+</html>
